@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Factor Tree Generator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;text-align:center;background:#f4f4f4;padding:20px}
+h1{font-size:24px;margin-bottom:16px}
+.controls{margin-bottom:8px}
+input{padding:9px 12px;font-size:18px;width:140px;border:2px solid #ccc;border-radius:6px}
+button{padding:9px 18px;font-size:18px;cursor:pointer;background:#4a90d9;color:#fff;border:none;border-radius:6px;margin-left:8px}
+button:hover{background:#357abd}
+#error{color:red;font-size:14px;min-height:20px;margin:6px 0}
+#tree{overflow-x:auto;margin-top:8px}
+#result{margin-top:14px;font-size:22px;font-weight:bold}
+.legend{margin-top:10px;font-size:13px;display:flex;justify-content:center;gap:18px}
+.leg{display:flex;align-items:center;gap:5px}
+.dot{width:16px;height:16px;border-radius:50%;border:2px solid #333;display:inline-block}
+</style>
+</head>
+<body>
+<h1>Factor Tree Generator</h1>
+<div class="controls">
+  <input type="number" id="num" value="90" min="2" max="99999">
+  <button onclick="generate()">Generate</button>
+</div>
+<div id="error"></div>
+<div id="tree"></div>
+<div id="result"></div>
+<div class="legend">
+  <div class="leg"><div class="dot" style="background:#d4edda"></div>Prime</div>
+  <div class="leg"><div class="dot" style="background:#f8d7da"></div>Composite</div>
+</div>
+
+<script>
+const PAD=20, RAD=24, HGAP=66, VGAP=80;
+
+function smallestFactor(n){
+  for(let i=2;i*i<=n;i++) if(n%i===0) return i;
+  return n;
+}
+function isPrime(n){ return n>1 && smallestFactor(n)===n; }
+
+function buildTree(n){
+  if(isPrime(n)) return {val:n,prime:true,left:null,right:null};
+  let f=smallestFactor(n);
+  return {val:n,prime:false,left:buildTree(f),right:buildTree(n/f)};
+}
+
+function indexLeaves(node,counter){
+  if(!node.left){ node.leafIdx=counter.v++; return; }
+  indexLeaves(node.left,counter);
+  indexLeaves(node.right,counter);
+}
+
+function calcXY(node,depth){
+  node.y=PAD+RAD+depth*VGAP;
+  if(!node.left){ node.x=PAD+RAD+node.leafIdx*HGAP; return; }
+  calcXY(node.left,depth+1);
+  calcXY(node.right,depth+1);
+  node.x=(node.left.x+node.right.x)/2;
+}
+
+function treeDepth(node){
+  if(!node.left) return 0;
+  return 1+Math.max(treeDepth(node.left),treeDepth(node.right));
+}
+
+function renderSVG(root,leafCount){
+  const W=2*PAD+2*RAD+(leafCount-1)*HGAP;
+  const H=2*PAD+2*RAD+treeDepth(root)*VGAP;
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("width",W);
+  svg.setAttribute("height",H);
+
+  function mkLine(a,b){
+    const el=document.createElementNS(NS,"line");
+    el.setAttribute("x1",a.x); el.setAttribute("y1",a.y);
+    el.setAttribute("x2",b.x); el.setAttribute("y2",b.y);
+    el.setAttribute("stroke","#777"); el.setAttribute("stroke-width","2");
+    svg.appendChild(el);
+  }
+  function drawLines(n){
+    if(!n.left) return;
+    mkLine(n,n.left); drawLines(n.left);
+    mkLine(n,n.right); drawLines(n.right);
+  }
+  function drawNodes(n){
+    const g=document.createElementNS(NS,"g");
+    const c=document.createElementNS(NS,"circle");
+    c.setAttribute("cx",n.x); c.setAttribute("cy",n.y); c.setAttribute("r",RAD);
+    c.setAttribute("fill",n.prime?"#d4edda":"#f8d7da");
+    c.setAttribute("stroke","#333"); c.setAttribute("stroke-width","2");
+    const t=document.createElementNS(NS,"text");
+    t.setAttribute("x",n.x); t.setAttribute("y",n.y);
+    t.setAttribute("text-anchor","middle");
+    t.setAttribute("dominant-baseline","central");
+    t.setAttribute("font-family","Arial,sans-serif");
+    t.setAttribute("font-weight","bold");
+    t.setAttribute("font-size",n.val>=1000?"11":"14");
+    t.textContent=n.val;
+    g.appendChild(c); g.appendChild(t);
+    svg.appendChild(g);
+    if(n.left){ drawNodes(n.left); drawNodes(n.right); }
+  }
+
+  drawLines(root); // lines behind nodes
+  drawNodes(root);
+  return svg;
+}
+
+function factorMap(n){
+  let m={};
+  for(let i=2;i*i<=n;i++){
+    while(n%i===0){ m[i]=(m[i]||0)+1; n/=i; }
+  }
+  if(n>1) m[n]=(m[n]||0)+1;
+  return m;
+}
+
+function generate(){
+  const errDiv=document.getElementById("error");
+  const treeDiv=document.getElementById("tree");
+  const resDiv=document.getElementById("result");
+  errDiv.textContent=""; treeDiv.innerHTML=""; resDiv.innerHTML="";
+
+  const n=parseInt(document.getElementById("num").value);
+  if(isNaN(n)||n<2){ errDiv.textContent="Enter an integer ≥ 2."; return; }
+  if(n>99999){ errDiv.textContent="Enter a number ≤ 99,999."; return; }
+
+  const root=buildTree(n);
+  const counter={v:0};
+  indexLeaves(root,counter);
+  calcXY(root,0);
+  treeDiv.appendChild(renderSVG(root,counter.v));
+
+  const map=factorMap(n);
+  const parts=[];
+  for(const k in map) parts.push(map[k]===1?k:`${k}<sup>${map[k]}</sup>`);
+  resDiv.innerHTML=`${n} = ${parts.join(" × ")}`;
+}
+
+generate();
+</script>
+</body>
+</html>
